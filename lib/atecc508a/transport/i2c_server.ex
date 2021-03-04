@@ -166,6 +166,29 @@ defmodule ATECC508A.Transport.I2CServer do
     end
   end
 
+  defp validate_signature_or_retry({:ok, @atecc508a_signature}, _retries) do
+    :ok
+  end
+
+  defp validate_signature_or_retry({:ok, something_else}, retries) do
+    Logger.warn(
+      "Unexpected wakeup response: #{inspect(something_else)}. #{retries - 1} retries remaining."
+    )
+
+    {:retry, retries - 1}
+  end
+
+  defp validate_signature_or_retry({:error, :"Connection timed out"}, retries) do
+    Logger.warn("Connection timed out. #{retries - 1} retries remaining.")
+
+    {:retry, retries - 1}
+  end
+
+  defp validate_signature_or_retry(error, _retries) do
+    Logger.error("Unexpected error response: #{inspect(error)}. ")
+    error
+  end
+
   defp wakeup(i2c, address, retries \\ @atecc508a_default_wakeup_retries)
 
   defp wakeup(_i2c, _address, 0) do
@@ -185,18 +208,15 @@ defmodule ATECC508A.Transport.I2CServer do
     Process.sleep(@atecc508a_wake_delay_ms)
 
     # Check that it's awake by reading its signature
-    case Circuits.I2C.read(i2c, address, 4) do
+    case Circuits.I2C.read(i2c, address, 4)
+         |> validate_signature_or_retry(retries) do
       {:ok, @atecc508a_signature} ->
         :ok
 
-      {:ok, something_else} ->
-        Logger.warn(
-          "Unexpected wakeup response: #{inspect(something_else)}. #{retries - 1} retries remaining."
-        )
-
+      {:retry, remaining} ->
         Process.sleep(@atecc508a_retry_wakeup_ms)
-        _ = sleep(i2c, address)
-        wakeup(i2c, address, retries - 1)
+        # _ = sleep(i2c, address)
+        wakeup(i2c, address, remaining)
 
       error ->
         error
