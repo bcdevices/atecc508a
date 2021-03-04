@@ -12,6 +12,7 @@ defmodule ATECC508A.Transport.I2CServer do
   @atecc508a_poll_interval_ms 2
   @atecc508a_retry_wakeup_ms 500
   @atecc508a_default_wakeup_retries 4
+  @atecc508a_wake <<0>>
 
   @spec start_link(keyword()) :: :ignore | {:error, any()} | {:ok, pid()}
   def start_link([bus_name, address, process_name]) do
@@ -202,7 +203,7 @@ defmodule ATECC508A.Transport.I2CServer do
     # Since only 8-bits get through, the I2C speed needs to be < 133 KHz for
     # this to work. This "fails" since nobody will ACK the write and that's
     # expected.
-    _ = Circuits.I2C.write(i2c, 0, <<0>>)
+    _ = Circuits.I2C.write(i2c, 0, @atecc508a_wake)
 
     # Wait for the device to wake up for real
     Process.sleep(@atecc508a_wake_delay_ms)
@@ -210,7 +211,7 @@ defmodule ATECC508A.Transport.I2CServer do
     # Check that it's awake by reading its signature
     case Circuits.I2C.read(i2c, address, 4)
          |> validate_signature_or_retry(retries) do
-      {:ok, @atecc508a_signature} ->
+      :ok ->
         :ok
 
       {:retry, remaining} ->
