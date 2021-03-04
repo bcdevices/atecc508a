@@ -49,13 +49,25 @@ defmodule ATECC508A.Transport.I2CServer do
     {:ok, i2c} = Circuits.I2C.open(bus_name)
 
     state = %{i2c: i2c, bus_name: bus_name, address: address, cache: Cache.init()}
-    {:ok, state}
+    {:ok, state, {:continue, :start_asleep}}
+  end
+
+  @impl true
+  def handle_continue(:start_asleep, state) do
+    # Issue a sleep command so that the device starts out in the sleep
+    # state even if some other code wakes it up. If this isn't done, we'll
+    # get out of sync with the sleep/wake state and end up getting confused
+    # when we don't get the expected wake response.
+    _ = sleep(state.i2c, state.address)
+
+    {:noreply, state}
   end
 
   @impl true
   def handle_call(:detected?, _from, state) do
     case wakeup(state.i2c, state.address) do
       :ok ->
+        _ = sleep(state.i2c, state.address)
         {:reply, true, state}
 
       _ ->
@@ -136,6 +148,10 @@ defmodule ATECC508A.Transport.I2CServer do
           error
       end
 
+    # Always send a sleep after a request even if it fails so that the processor is in
+    # a known state for the next call.
+    _ = sleep(state.i2c, state.address)
+
     rc
   end
 
@@ -200,11 +216,17 @@ defmodule ATECC508A.Transport.I2CServer do
 
       {:retry, remaining} ->
         Process.sleep(@atecc508a_retry_wakeup_ms)
+        # _ = sleep(i2c, address)
         wakeup(i2c, address, remaining)
 
       error ->
         error
     end
+  end
+
+  defp sleep(i2c, address) do
+    # See ATECC508A 6.2 for the sleep sequence.
+    Circuits.I2C.write(i2c, address, <<0x01>>)
   end
 
   defp poll_read(i2c, address, response_len, timeout, max_timeout) do
