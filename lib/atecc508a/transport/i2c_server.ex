@@ -185,6 +185,12 @@ defmodule ATECC508A.Transport.I2CServer do
     {:retry, retries - 1}
   end
 
+  defp validate_signature_or_retry({:error, :"Operation timed out"}, retries) do
+    Logger.warn("Operation timed out. #{retries - 1} retries remaining.")
+
+    {:retry, retries - 1}
+  end
+
   defp validate_signature_or_retry(error, _retries) do
     Logger.error("Unexpected error response: #{inspect(error)}. ")
     error
